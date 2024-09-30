@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         """Creates input fields, labels, and checkboxes for each field."""
         for field in fields:
             label = QLabel(field)
-            label.setMinimumWidth(135)
+            label.setMinimumWidth(150)
 
             input_field = QLineEdit()
             input_field.setMinimumSize(QSize(200, 50))
@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
 
     def export_entries_to_csv(self):
         """Export all saved entries to a CSV-compatible text file."""
-        file_name = QFileDialog.getSaveFileName(self, "Save CSV File", "", "CSV Files (*.csv);;All Files (*)")
+        file_name = "Damos_export.csv"
         
         if file_name:
             try:
