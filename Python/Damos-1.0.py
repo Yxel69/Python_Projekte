@@ -1,5 +1,6 @@
 import sys
 import os
+import csv
 from PyQt6.QtCore import QSize
 from PyQt6.QtWidgets import (
     QApplication,
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QListWidget,
     QCheckBox,
+    QFileDialog,
 )
 
 from PyQt6.QtGui import QIcon
@@ -23,7 +25,7 @@ os.system('cls' if os.name == 'nt' else 'clear')  # Clear terminal window
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Damos-Datenbankeingabe")
+        self.setWindowTitle("Datenbankeingabe")
         self.setWindowIcon(QIcon("pikachu.png"))
         self.main_layout = QVBoxLayout()
 
@@ -34,8 +36,8 @@ class MainWindow(QMainWindow):
         self.current_entry_key = None  # Track the currently selected entry key
 
         fields = [
-            "Handelsregisternummer:",
-            "Firmenname:",  # This will be used as the key
+            "Firmenname:",
+            "Handelsregister:",  # This will be used as the key
             "Straßenname:",
             "Hausnummer:",
             "PLZ:",
@@ -61,7 +63,7 @@ class MainWindow(QMainWindow):
         """Creates input fields, labels, and checkboxes for each field."""
         for field in fields:
             label = QLabel(field)
-            label.setMinimumWidth(135)
+            label.setMinimumWidth(150)
 
             input_field = QLineEdit()
             input_field.setMinimumSize(QSize(200, 50))
@@ -80,17 +82,22 @@ class MainWindow(QMainWindow):
     def create_bottom_buttons(self):
         """Creates the bottom action buttons."""
         bottom_row_layout = QHBoxLayout()
+        # Button for importing entries from a CSV file
+        self.import_button = QPushButton("Import from CSV")
+        self.import_button.setMaximumSize(QSize(200, 50))
+        self.import_button.clicked.connect(self.import_entries_from_csv)  # Connect to import function
+        bottom_row_layout.addWidget(self.import_button)
 
         # Button for adding a new entry
         self.add_button = QPushButton("Add Entry")
         self.add_button.setMaximumSize(QSize(200, 50))
-        self.add_button.clicked.connect(self.submit_new_entry)
+        self.add_button.clicked.connect(self.submit_new_entry) # connect to adding function
         bottom_row_layout.addWidget(self.add_button)
 
         # Button for modifying an existing entry
         self.modify_button = QPushButton("Modify Entry")
         self.modify_button.setMaximumSize(QSize(200, 50))
-        self.modify_button.clicked.connect(self.modify_existing_entry)
+        self.modify_button.clicked.connect(self.modify_existing_entry) # connect to modify function
         bottom_row_layout.addWidget(self.modify_button)
 
         # Button for viewing saved entries
@@ -102,14 +109,20 @@ class MainWindow(QMainWindow):
         # Button for removing selected entries
         self.remove_selected_button = QPushButton("Remove Selected")
         self.remove_selected_button.setMaximumSize(QSize(200, 50))
-        self.remove_selected_button.clicked.connect(self.remove_selected_entries)  # Connect to remove function
+        self.remove_selected_button.clicked.connect(self.remove_selected_entries)  # connect to remove function
         bottom_row_layout.addWidget(self.remove_selected_button)
+
+        # Button for exporting entries to a CSV file
+        self.export_button = QPushButton("Export to CSV")
+        self.export_button.setMaximumSize(QSize(200, 50))
+        self.export_button.clicked.connect(self.export_entries_to_csv)  # Connect to export function
+        bottom_row_layout.addWidget(self.export_button)
 
         self.main_layout.addLayout(bottom_row_layout)
 
     def submit_new_entry(self):
         """Submit the input from all fields and store them as a new entry."""
-        firmenname = self.input_fields[1].text().strip()  # Get the Firmenname from the second input field
+        firmenname = self.input_fields[0].text().strip()  # Get the Firmenname from the second input field
 
         if not firmenname:
             QMessageBox.warning(self, "Error", "Firmenname cannot be empty.")
@@ -117,12 +130,8 @@ class MainWindow(QMainWindow):
 
         # Check if the Firmenname already exists
         if firmenname in self.all_entries:
-            overwrite = QMessageBox.question(
-                self, "Overwrite Entry", f"Entry with Firmenname '{firmenname}' already exists. Overwrite?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if overwrite == QMessageBox.No:
-                return
+           QMessageBox.warning(self, "Error", "Firmenname already exists.")
+           return
 
         new_entry = {f"Field {i + 1}": input_field.text() for i, input_field in enumerate(self.input_fields)}
         self.all_entries[firmenname] = new_entry  # Store the new entry with Firmenname as the key
@@ -196,6 +205,75 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "Error", "Could not populate fields.")
         dialog.close()  # Close the dialog after selection
+    def import_entries_from_csv(self):
+     """Import entries from a CSV file and populate the entries in the app."""
+     file_dialog = QFileDialog()
+     file_name, _ = file_dialog.getOpenFileName(self, "Open CSV", "", "CSV Files (*.csv)")
+
+     if not file_name:
+        return  # If no file is selected, exit the function
+
+     try:
+        with open(file_name, mode='r', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+
+            # Read header
+            header = next(reader)
+            if header[0] != "Firmenname":
+                QMessageBox.warning(self, "Error", "Invalid CSV format. First column must be 'Firmenname'.")
+                return
+
+            self.all_entries.clear()  # Clear existing entries before importing
+
+            # Read and import each row
+            for row in reader:
+                if len(row) < len(self.input_fields) + 1:
+                    QMessageBox.warning(self, "Error", "CSV format does not match expected number of fields.")
+                    return
+
+                firmenname = row[0].strip()
+                if not firmenname:
+                    continue  # Skip rows with empty Firmenname
+
+                # Create an entry dictionary based on the fields
+                entry = {f"Field {i + 1}": row[i + 1] for i in range(len(self.input_fields))}
+                self.all_entries[firmenname] = entry
+
+            # Optionally, populate the input fields with the first entry to give feedback
+            first_firmenname = list(self.all_entries.keys())[0]
+            first_entry = self.all_entries[first_firmenname]
+
+            for i, input_field in enumerate(self.input_fields):
+                input_field.setText(first_entry[f"Field {i + 1}"])
+
+            QMessageBox.information(self, "Success", f"Entries successfully imported from {file_name}.")
+
+     except Exception as e:
+        QMessageBox.critical(self, "Error", f"Failed to import entries: {str(e)}")
+
+    def export_entries_to_csv(self):
+        """Export all saved entries to a CSV-compatible text file."""
+        file_dialog = QFileDialog()
+        file_name, _ = file_dialog.getSaveFileName(self, "Save CSV", "", "CSV Files (*.csv)")
+
+        
+        if file_name:
+            try:
+                with open(file_name, mode='w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+
+                    # Write header
+                    header = ["Firmenname"] + [f"Field {i + 1}" for i in range(len(self.input_fields))]
+                    writer.writerow(header)
+
+                    # Write each entry
+                    for firmenname, entry in self.all_entries.items():
+                        row = [firmenname] + [entry[f"Field {i + 1}"] for i in range(len(self.input_fields))]
+                        writer.writerow(row)
+
+                QMessageBox.information(self, "Success", "Entries successfully exported to CSV.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to export entries: {str(e)}")
 
 # Create the application instance
 app = QApplication([])
