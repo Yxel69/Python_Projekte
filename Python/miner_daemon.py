@@ -1,74 +1,83 @@
+import requests
 import hashlib
 import time
-import requests
+import concurrent.futures
 
-class Block:
-    def __init__(self, index, previous_hash, data, timestamp):
-        self.index = index
-        self.previous_hash = previous_hash
-        self.data = data
-        self.timestamp = timestamp
-        self.nonce = 0
-        self.hash = self.calculate_hash()
+class Miner:
+    def __init__(self, node_url, thread_count=4):
+        self.node_url = node_url  # The blockchain node URL
+        self.thread_count = thread_count  # Number of threads to use for mining
 
-    def calculate_hash(self):
-        block_string = f"{self.index}{self.previous_hash}{self.data}{self.timestamp}{self.nonce}"
+    def fetch_latest_block(self):
+        """Fetch the latest block from the blockchain node."""
+        response = requests.get(f'{self.node_url}/get_chain')
+        chain = response.json()
+        return chain[-1]  # Return the latest block
+
+    def fetch_difficulty(self):
+        """Fetch the current difficulty from the blockchain node."""
+        response = requests.get(f'{self.node_url}/get_difficulty')
+        return response.json()['difficulty']
+
+    def calculate_hash(self, index, previous_hash, data, timestamp, nonce):
+        """Calculate the block hash."""
+        block_string = f"{index}{previous_hash}{data}{timestamp}{nonce}"
         return hashlib.sha256(block_string.encode()).hexdigest()
 
-    def mine_block(self, difficulty):
-        """Mine the block using Proof of Work."""
-        target = '0' * difficulty
-        while self.hash[:difficulty] != target:
-            self.nonce += 1
-            self.hash = self.calculate_hash()
-        print(f"Block mined: {self.hash}")
-
-def get_latest_block():
-    """Fetch the latest block from the node."""
-    response = requests.get("http://localhost:5000/get_chain")
-    chain = response.json()
-    return chain[-1]  # Return the latest block in the chain
-
-def get_current_difficulty():
-    """Fetch the current difficulty from the node."""
-    response = requests.get("http://localhost:5000/get_difficulty")
-    return response.json()["difficulty"]
-
-def mine_block():
-    """Mine a new block every minute, adjusting difficulty based on the node."""
-    while True:
-        latest_block = get_latest_block()
-        new_index = latest_block['index'] + 1
-        previous_hash = latest_block['hash']
-        data = {"transactions": f"Block {new_index} mined"}  # Add your block data (e.g., transactions)
+    def mine_block(self, previous_block, difficulty, block_data):
+        """Mine a new block using multiple threads."""
+        index = previous_block['index'] + 1
+        previous_hash = previous_block['hash']
         timestamp = time.time()
 
-        # Fetch the current difficulty from the node
-        difficulty = get_current_difficulty()
-        print(f"Current mining difficulty: {difficulty}")
+        def try_nonce(start_nonce, step):
+            """Thread worker function to try different nonces."""
+            nonce = start_nonce
+            while True:
+                hash_value = self.calculate_hash(index, previous_hash, block_data, timestamp, nonce)
+                if hash_value.startswith('0' * difficulty):
+                    return nonce, hash_value
+                nonce += step
 
-        # Create a new block
-        new_block = Block(new_index, previous_hash, data, timestamp)
-        
-        # Mine the block
-        new_block.mine_block(difficulty)
+        # Use thread pool to mine the block
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.thread_count) as executor:
+            futures = [executor.submit(try_nonce, i, self.thread_count) for i in range(self.thread_count)]
 
-        # Send the block to the node daemon
-        block_data = {
-            "index": new_block.index,
-            "previous_hash": new_block.previous_hash,
-            "data": new_block.data,
-            "timestamp": new_block.timestamp,
-            "nonce": new_block.nonce,
-            "hash": new_block.hash
-        }
+            # Wait for the first thread to find a valid nonce and return the result
+            for future in concurrent.futures.as_completed(futures):
+                nonce, hash_value = future.result()
+                return {
+                    "index": index,
+                    "previous_hash": previous_hash,
+                    "data": block_data,
+                    "timestamp": timestamp,
+                    "nonce": nonce,
+                    "hash": hash_value
+                }
 
-        response = requests.post("http://localhost:5000/add_block", json=block_data)
-        if response.status_code == 201:
-            print(f"Block {new_block.index} successfully added to the blockchain.")
-        else:
-            print(f"Failed to add block {new_block.index}: {response.json()['message']}")
+    def submit_block(self, block):
+        """Submit a mined block to the blockchain node."""
+        response = requests.post(f'{self.node_url}/add_block', json=block)
+        return response.json()
 
+    def mine(self, block_data):
+        """Main function to handle the mining process."""
+        print("Fetching latest block...")
+        latest_block = self.fetch_latest_block()
 
+        print("Fetching current difficulty...")
+        difficulty = self.fetch_difficulty()
+
+        print(f"Mining new block with difficulty {difficulty}...")
+        mined_block = self.mine_block(latest_block, difficulty, block_data)
+
+        print(f"Block mined with nonce {mined_block['nonce']}")
+        print("Submitting block to the blockchain node...")
+        response = self.submit_block(mined_block)
+
+        print("Response from node:", response)
+
+# Example of usage
 if __name__ == '__main__':
-    mine_block()
+    miner = Miner(node_url="http://localhost:5000", thread_count=8)
+    miner.mine("New block data")
