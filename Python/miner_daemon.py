@@ -61,23 +61,26 @@ class Miner:
         return response.json()
 
     def mine(self, block_data):
-        """Main function to handle the mining process."""
-        print("Fetching latest block...")
-        latest_block = self.fetch_latest_block()
+     while True:
+          """Main function to handle the mining process."""
+          print("Fetching latest block...")
+          latest_block = self.fetch_latest_block()
 
-        print("Fetching current difficulty...")
-        difficulty = self.fetch_difficulty()
+          print("Fetching current difficulty...")
+          difficulty = self.fetch_difficulty()
 
-        print(f"Mining new block with difficulty {difficulty}...")
-        mined_block = self.mine_block(latest_block, difficulty, block_data)
+          print(f"Mining new block with difficulty {difficulty}...")
+          mined_block = self.mine_block(latest_block, difficulty, block_data)
 
-        print(f"Block mined with nonce {mined_block['nonce']}")
-        print("Submitting block to the blockchain node...")
-        response = self.submit_block(mined_block)
+          print(f"Block mined with nonce {mined_block['nonce']}")
+          print("Submitting block to the blockchain node...")
+          response = self.submit_block(mined_block)
 
-        print("Response from node:", response)
+          print("Response from node:", response)
 
 # Example of usage
 if __name__ == '__main__':
+    
     miner = Miner(node_url="http://localhost:5000", thread_count=8)
+   
     miner.mine("New block data")
